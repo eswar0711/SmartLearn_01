@@ -1,0 +1,223 @@
+import React, { useState } from 'react';
+import { signIn, signUp } from '../utils/auth';
+import '../index.css';
+import EduvergeLogo from '../assets/smartVerg.jpeg';
+import OnlyLogo from '../assets/onlylogo.jpeg';
+// 1. Import toast and Toaster
+import toast, { Toaster } from 'react-hot-toast';
+
+interface LoginPageProps {
+  onLogin: () => void;
+}
+
+const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [first_name, setName] = useState('');
+  const [role, setRole] = useState<'faculty' | 'student'>('student');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // ✅ Demo Accounts
+  const demoAccounts = [
+    {
+      role: 'Student',
+      email: 'student@eduverge.com',
+      password: 'password@123',
+    },
+    {
+      role: 'Faculty',
+      email: 'faculty@eduverge.com',
+      password: 'faculty@1234',
+    },
+    {
+      role: 'Admin',
+      email: 'admin@eduverge.com',
+      password: 'Admin@123',
+    },
+  ];
+
+  const fillDemoCredentials = (email: string, password: string) => {
+    setEmail(email);
+    setPassword(password);
+    setIsSignUp(false);
+    setError('');
+    // Optional: Nice feedback when filling demo data
+    toast.success('Demo credentials autofilled!');
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      if (isSignUp) {
+        await signUp(email, password, first_name, role);
+        
+        // 2. REPLACED ALERT WITH TOAST
+        toast.success('Account created! Please sign in.', {
+          duration: 4000,
+          position: 'top-center',
+          icon: '🎉',
+        });
+        
+        setIsSignUp(false);
+        setName('');
+        setRole('student');
+      } else {
+        await signIn(email, password);
+        toast.success('Successfully Signed In!');
+        onLogin();
+      }
+    } catch (err: any) {
+      const errorMessage = err.message || 'An error occurred';
+      setError(errorMessage);
+      // Optional: Show error as a toast too
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center p-4">
+      
+      {/* 3. Add Toaster component here so notifications can appear */}
+      <Toaster />
+
+      <div className="relative bg-gray-50 rounded-3xl shadow-2xl w-full max-w-md p-10 overflow-hidden">
+
+        {/* Watermark */}
+        <img
+          src={OnlyLogo}
+          alt="EduVerge watermark"
+          className="pointer-events-none select-none absolute -top-10 -right-16 w-80 opacity-15 blur-[1px]"
+        />
+
+        <div className="relative z-10">
+          {/* Header */}
+          <div className="flex flex-col items-center mb-8">
+            <div className="bg-primary-100 p-3 rectangle-full mb-4 shadow-sm">
+              <img src={EduvergeLogo} alt="EduVerge logo" className="w-16 h-16 object-contain" />
+            </div>
+            <h1 className="text-3xl font-bold text-gray-800">EduVerge</h1>
+            <p className="text-gray-600 mt-2">Smart Learning & Assessment</p>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {isSignUp && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={first_name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-lg"
+                  required
+                  placeholder="Enter your full name"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-2 border rounded-lg"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-2 border rounded-lg"
+                required
+                minLength={6}
+              />
+            </div>
+
+            {isSignUp && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as 'faculty' | 'student')}
+                  className="w-full px-4 py-2 border rounded-lg"
+                >
+                  <option value="student">Student</option>
+                  <option value="faculty">Faculty</option>
+                </select>
+              </div>
+            )}
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-primary-600 hover:bg-primary-700 text-blue-500 font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed" >
+              {loading ? 'Loading...' : isSignUp ? 'Sign Up' : 'Sign In'}
+            </button>
+          </form>
+
+          {/* Switch */}
+          <div className="mt-5 text-center">
+            <button
+              onClick={() => {
+                setIsSignUp(!isSignUp);
+                setError('');
+                setName('');
+              }}
+              className="text-primary-600 text-sm font-medium"
+            >
+              {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+            </button>
+          </div>
+
+          {/* ✅ Demo Credentials */}
+          <div className="mt-8 border-t pt-5">
+            <p className="text-sm text-gray-600 mb-3 text-center font-medium">
+              Demo Accounts
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {demoAccounts.map((demo) => (
+                <button
+                  key={demo.role}
+                  type="button"
+                  onClick={() => fillDemoCredentials(demo.email, demo.password)}
+                  className="border border-primary-300 rounded-lg px-3 py-2 text-sm hover:bg-primary-50"
+                >
+                  <div className="font-semibold">{demo.role}</div>
+                  <div className="text-xs text-gray-500 truncate">
+                    {demo.email}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <p className="text-xs text-gray-400 mt-3 text-center">
+              Click any role to auto-fill credentials
+            </p>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default LoginPage;
