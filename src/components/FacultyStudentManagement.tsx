@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../utils/supabaseClient';
-import { createClient } from '@supabase/supabase-js'; // Import createClient
-// import NavigationSidebar from './NavigationSidebar';
+import { createClient } from '@supabase/supabase-js';
 import {
   Users,
   Plus,
   Search,
+  Filter
 } from 'lucide-react';
 import type { User } from '../utils/supabaseClient';
 
@@ -20,6 +20,7 @@ interface StudentRecord {
   role: 'student';
   is_active: boolean;
   created_at: string;
+  branch_id?: string; // Added branch_id to interface
 }
 
 interface AddStudentForm {
@@ -28,11 +29,14 @@ interface AddStudentForm {
   full_name: string;
 }
 
-const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = () => {
+const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = ({ user }) => {
   const [students, setStudents] = useState<StudentRecord[]>([]);
   const [filteredStudents, setFilteredStudents] = useState<StudentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Store the logged-in Faculty's Branch ID
+  const [facultyBranchId, setFacultyBranchId] = useState<string | null>(null);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -45,8 +49,30 @@ const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = () => 
   const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
-    fetchStudents();
-  }, []);
+    // 1. First get Faculty Branch, then fetch students for that branch
+    const initData = async () => {
+      try {
+        const { data: userData, error } = await supabase
+          .from('users')
+          .select('branch_id')
+          .eq('id', user.id)
+          .single();
+
+        if (error) throw error;
+
+        const branchId = userData?.branch_id;
+        setFacultyBranchId(branchId);
+        
+        // 2. Fetch students filtered by this branch
+        fetchStudents(branchId);
+      } catch (err) {
+        console.error('Error fetching faculty profile:', err);
+        setLoading(false);
+      }
+    };
+
+    initData();
+  }, [user.id]);
 
   useEffect(() => {
     if (searchQuery) {
@@ -62,13 +88,23 @@ const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = () => 
     }
   }, [searchQuery, students]);
 
-  const fetchStudents = async () => {
+  const fetchStudents = async (branchId: string | null) => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('users')
         .select('*')
         .eq('role', 'student')
         .order('created_at', { ascending: false });
+
+      // ⭐ SECURITY FIX: Only fetch students from the faculty's branch
+      if (branchId) {
+        query = query.eq('branch_id', branchId);
+      } else {
+        // Optional: If faculty has no branch, return empty list or handle accordingly
+        // For now, we allow fetching but usually, this case should be handled by admin assigning a branch
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 
@@ -81,7 +117,6 @@ const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = () => 
     }
   };
 
-  // ✅ FINAL & SECURE STUDENT CREATION WITH TEMP CLIENT
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
@@ -97,9 +132,11 @@ const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = () => 
         throw new Error('Password must be at least 6 characters');
       }
 
-      // 2. Create a Temporary Client
-      // We use the env variables directly to create a fresh instance
-      // Note: Ensure these env variables are accessible in your project
+      if (!facultyBranchId) {
+        throw new Error('You are not assigned to a branch. Cannot create students.');
+      }
+
+      // 2. Create a Temporary Client (to avoid logging out current user)
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -109,20 +146,20 @@ const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = () => 
 
       const tempClient = createClient(supabaseUrl, supabaseKey, {
         auth: {
-          persistSession: false, // CRITICAL: This prevents logging out the current Faculty user
+          persistSession: false,
           autoRefreshToken: false,
           detectSessionInUrl: false,
         },
       });
 
-      // 3. Sign up the student using the temp client (Creates Auth User)
+      // 3. Sign up the student
       const { data: authData, error: authError } = await tempClient.auth.signUp({
         email: addForm.email,
         password: addForm.password,
         options: {
           data: {
             full_name: addForm.full_name,
-            role: 'student', // Save metadata to auth object
+            role: 'student',
           },
         },
       });
@@ -130,22 +167,19 @@ const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = () => 
       if (authError) throw authError;
 
       if (authData.user) {
-        // 4. Manually insert into the public 'users' table
-        // We use the MAIN 'supabase' client here because the Faculty is logged in 
-        // and presumably has RLS permission to insert into the 'users' table.
+        // 4. Insert into 'users' table with the FACULTY'S BRANCH ID
         const { error: dbError } = await supabase.from('users').insert([
           {
-            id: authData.user.id, // Link the Auth ID
+            id: authData.user.id,
             email: addForm.email,
             full_name: addForm.full_name,
             role: 'student',
+            branch_id: facultyBranchId, // ⭐ AUTO-ASSIGN BRANCH
             is_active: true,
           },
         ]);
 
         if (dbError) {
-           // If the database insert fails, the Auth user still exists. 
-           // In a production app, you might want to try and delete the Auth user here to clean up.
            throw new Error(`Auth created, but DB insert failed: ${dbError.message}`);
         }
 
@@ -155,8 +189,8 @@ const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = () => 
         setShowAddModal(false);
         setAddForm({ email: '', password: '', full_name: '' });
         
-        // Refresh the list
-        fetchStudents();
+        // Refresh the list using the current branch ID
+        fetchStudents(facultyBranchId);
       }
     } catch (err: any) {
       console.error('Error adding student:', err);
@@ -169,7 +203,6 @@ const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = () => 
   if (loading) {
     return (
       <div className="flex h-screen bg-gray-50">
-        {/* <NavigationSidebar user={user} /> */}
         <div className="flex-1 flex items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
         </div>
@@ -179,19 +212,22 @@ const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = () => 
 
   return (
     <div className="flex bg-gray-50 min-h-screen">
-      {/* <NavigationSidebar user={user} /> */}
-
       <div className="flex-1 p-8">
         <div className="flex justify-between items-start mb-8">
           <div>
             <h2 className="text-3xl font-bold text-gray-800 mb-2">
               Student Management
             </h2>
-            <p className="text-gray-600">View and manage enrolled students</p>
+            <p className="text-gray-600">
+              {facultyBranchId 
+                ? 'Manage students in your branch' 
+                : 'View enrolled students (No branch assigned)'}
+            </p>
           </div>
           <button
             onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
+            disabled={!facultyBranchId}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="w-5 h-5" />
             Add New Student
@@ -201,6 +237,14 @@ const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = () => 
         {successMessage && (
           <div className="mb-6 p-4 bg-green-100 text-green-700 rounded-lg">
             {successMessage}
+          </div>
+        )}
+
+        {/* Warning if no branch assigned */}
+        {!facultyBranchId && (
+          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg flex items-center gap-2">
+            <Filter className="w-5 h-5" />
+            <span>You are not assigned to a branch. You cannot add new students or see branch-specific data. Please contact Admin.</span>
           </div>
         )}
 
@@ -239,9 +283,17 @@ const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = () => 
                     <td className="px-6 py-4">{student.full_name}</td>
                     <td className="px-6 py-4">{student.email}</td>
                     <td className="px-6 py-4">
-                      {student.is_active ? 'Active' : 'Inactive'}
+                      {student.is_active ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                          Inactive
+                        </span>
+                      )}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 text-gray-500 text-sm">
                       {new Date(student.created_at).toLocaleDateString()}
                     </td>
                   </tr>
@@ -254,15 +306,18 @@ const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = () => 
 
       {/* Add Student Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <form
             onSubmit={handleAddStudent}
-            className="bg-white rounded-xl p-6 w-full max-w-md space-y-4"
+            className="bg-white rounded-xl p-6 w-full max-w-md space-y-4 shadow-xl"
           >
             <h3 className="text-xl font-bold">Add New Student</h3>
+            <p className="text-sm text-gray-500">
+              This student will be automatically added to your branch.
+            </p>
 
             {formError && (
-              <div className="p-2 bg-red-100 text-red-700 rounded">
+              <div className="p-3 bg-red-100 border border-red-200 text-red-700 text-sm rounded">
                 {formError}
               </div>
             )}
@@ -272,7 +327,7 @@ const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = () => 
               placeholder="Full Name"
               value={addForm.full_name}
               onChange={e => setAddForm({ ...addForm, full_name: e.target.value })}
-              className="w-full border p-2 rounded"
+              className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"
               required
             />
             <input
@@ -280,31 +335,31 @@ const FacultyStudentManagement: React.FC<FacultyStudentManagementProps> = () => 
               placeholder="Email"
               value={addForm.email}
               onChange={e => setAddForm({ ...addForm, email: e.target.value })}
-              className="w-full border p-2 rounded"
+              className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"
               required
             />
             <input
               type="password"
-              placeholder="Password"
+              placeholder="Password (min 6 chars)"
               value={addForm.password}
               onChange={e => setAddForm({ ...addForm, password: e.target.value })}
-              className="w-full border p-2 rounded"
+              className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"
               required
               minLength={6}
             />
 
-            <div className="flex gap-3">
+            <div className="flex gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => setShowAddModal(false)}
-                className="flex-1 border rounded p-2 hover:bg-gray-100 transition-colors"
+                className="flex-1 border rounded p-2 hover:bg-gray-100 transition-colors font-medium text-gray-700"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={actionLoading}
-                className="flex-1 bg-blue-600 text-white rounded p-2 hover:bg-blue-700 transition-colors disabled:opacity-50"
+                className="flex-1 bg-blue-600 text-white rounded p-2 hover:bg-blue-700 transition-colors disabled:opacity-50 font-medium"
               >
                 {actionLoading ? 'Adding...' : 'Add Student'}
               </button>

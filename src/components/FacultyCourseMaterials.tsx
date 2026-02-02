@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../utils/supabaseClient';
-import type { User, Subject, CourseMaterial } from '../utils/supabaseClient';
-//import NavigationSidebar from './NavigationSidebar';
+import type { User as AppUser, Subject, CourseMaterial } from '../utils/supabaseClient';
 import SubjectManagement from './SubjectManagement';
 import { Upload, Trash2, FileText, BookOpen, Calendar, HardDrive, AlertTriangle, AlertCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -28,8 +27,6 @@ const DeleteConfirmationModal: React.FC<DeleteModalProps> = ({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden transform transition-all scale-100">
-        
-        {/* Icon Header */}
         <div className="flex flex-col items-center pt-8 pb-4">
           <div className="bg-red-50 p-3 rounded-full mb-3">
              <AlertTriangle className="w-8 h-8 text-red-500" />
@@ -37,7 +34,6 @@ const DeleteConfirmationModal: React.FC<DeleteModalProps> = ({
           <h3 className="text-xl font-bold text-gray-900">{title}</h3>
         </div>
 
-        {/* Content */}
         <div className="px-8 pb-6 text-center">
           <p className="text-gray-500 mb-2">
             {message} {itemName && <span className="font-semibold text-gray-800">"{itemName}"</span>}?
@@ -51,7 +47,6 @@ const DeleteConfirmationModal: React.FC<DeleteModalProps> = ({
           </div>
         </div>
 
-        {/* Footer Buttons */}
         <div className="bg-gray-50 px-6 py-4 flex gap-3 justify-center">
           <button
             onClick={onClose}
@@ -65,11 +60,7 @@ const DeleteConfirmationModal: React.FC<DeleteModalProps> = ({
             disabled={isDeleting}
             className="flex-1 px-4 py-2.5 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 shadow-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            {isDeleting ? (
-               <>Deleting...</>
-            ) : (
-               <><Trash2 className="w-4 h-4" /> Delete</>
-            )}
+            {isDeleting ? 'Deleting...' : <><Trash2 className="w-4 h-4" /> Delete</>}
           </button>
         </div>
       </div>
@@ -82,7 +73,7 @@ const DeleteConfirmationModal: React.FC<DeleteModalProps> = ({
 // ==========================================
 
 interface FacultyCourseMaterialsProps {
-  user: User;
+  user: AppUser;
 }
 
 const FacultyCourseMaterials: React.FC<FacultyCourseMaterialsProps> = ({ user }) => {
@@ -90,8 +81,9 @@ const FacultyCourseMaterials: React.FC<FacultyCourseMaterialsProps> = ({ user })
   const [materials, setMaterials] = useState<CourseMaterial[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [facultyBranchId, setFacultyBranchId] = useState<string | null>(null);
   
-  // 2. NEW STATE FOR DELETE MODAL
+  // Modal State
   const [deleteModal, setDeleteModal] = useState({
     isOpen: false,
     materialId: '',
@@ -109,24 +101,55 @@ const FacultyCourseMaterials: React.FC<FacultyCourseMaterialsProps> = ({ user })
   const [file, setFile] = useState<File | null>(null);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    // 1. Initialize: Get Branch ID -> Then fetch data
+    const init = async () => {
+      try {
+        const { data: userData, error } = await supabase
+          .from('users')
+          .select('branch_id')
+          .eq('id', user.id)
+          .single();
 
-  const fetchData = async () => {
+        if (error) throw error;
+
+        const branchId = userData?.branch_id;
+        setFacultyBranchId(branchId);
+        fetchData(branchId);
+      } catch (err) {
+        console.error('Error fetching faculty profile:', err);
+        setLoading(false);
+      }
+    };
+
+    init();
+  }, [user.id]);
+
+  const fetchData = async (branchId: string | null) => {
     setLoading(true);
     try {
-      const { data: subjectsData } = await supabase
+      // 2. Fetch Subjects Filtered by Branch
+      let subjectQuery = supabase
         .from('subjects')
         .select('*')
         .order('semester', { ascending: true });
 
+      if (branchId) {
+        subjectQuery = subjectQuery.eq('branch_id', branchId);
+      }
+
+      const { data: subjectsData, error: subjectError } = await subjectQuery;
+      if (subjectError) throw subjectError;
+
       setSubjects(subjectsData || []);
 
-      const { data: materialsData } = await supabase
+      // 3. Fetch Materials uploaded by this Faculty
+      const { data: materialsData, error: materialError } = await supabase
         .from('course_materials')
         .select('*')
         .eq('faculty_id', user.id)
         .order('created_at', { ascending: false });
+
+      if (materialError) throw materialError;
 
       setMaterials(materialsData || []);
     } catch (error) {
@@ -137,6 +160,7 @@ const FacultyCourseMaterials: React.FC<FacultyCourseMaterialsProps> = ({ user })
     }
   };
 
+  // ... (File handling, Upload, Delete logic remains the same)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
@@ -202,7 +226,7 @@ const FacultyCourseMaterials: React.FC<FacultyCourseMaterialsProps> = ({ user })
       setMaterialType('pdf');
       setFile(null);
       
-      fetchData();
+      fetchData(facultyBranchId);
     } catch (error) {
       console.error('Error uploading material:', error);
       toast.error('Error uploading material. Please try again.');
@@ -211,7 +235,6 @@ const FacultyCourseMaterials: React.FC<FacultyCourseMaterialsProps> = ({ user })
     }
   };
 
-  // 3. UPDATED: OPEN DELETE MODAL
   const confirmDeleteMaterial = (material: CourseMaterial) => {
     setDeleteModal({
       isOpen: true,
@@ -222,18 +245,15 @@ const FacultyCourseMaterials: React.FC<FacultyCourseMaterialsProps> = ({ user })
     });
   };
 
-  // 4. UPDATED: EXECUTE DELETE (Replaces old handleDelete)
   const executeDeleteMaterial = async () => {
     setIsDeleting(true);
     try {
-      // Delete from storage
       const { error: storageError } = await supabase.storage
         .from('course-materials')
         .remove([deleteModal.fileUrl]);
 
       if (storageError) throw storageError;
 
-      // Delete from database
       const { error: dbError } = await supabase
         .from('course_materials')
         .delete()
@@ -242,7 +262,7 @@ const FacultyCourseMaterials: React.FC<FacultyCourseMaterialsProps> = ({ user })
       if (dbError) throw dbError;
 
       toast.success('Material deleted successfully!');
-      fetchData();
+      fetchData(facultyBranchId);
       setDeleteModal({ ...deleteModal, isOpen: false });
     } catch (error) {
       console.error('Error deleting material:', error);
@@ -281,7 +301,6 @@ const FacultyCourseMaterials: React.FC<FacultyCourseMaterialsProps> = ({ user })
   return (
     <div className="flex bg-gray-50 min-h-screen">
       
-      {/* 5. ADDED: Render the Custom Delete Modal */}
       <DeleteConfirmationModal 
         isOpen={deleteModal.isOpen}
         onClose={() => setDeleteModal({ ...deleteModal, isOpen: false })}
@@ -292,19 +311,24 @@ const FacultyCourseMaterials: React.FC<FacultyCourseMaterialsProps> = ({ user })
         isDeleting={isDeleting}
       />
 
-      {/* Main Content Area */}
       <div className="flex-1 p-4 md:p-8 w-full max-w-full overflow-hidden">
         <div className="mb-6 md:mb-8">
           <h2 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Course Materials</h2>
-          <p className="text-sm md:text-base text-gray-600">Upload and manage study materials for your courses</p>
+          <p className="text-sm md:text-base text-gray-600">
+            {facultyBranchId 
+              ? 'Upload and manage study materials for your branch' 
+              : 'Upload and manage study materials'}
+          </p>
         </div>
 
-        {/* Subject Management */}
-        <SubjectManagement onSubjectAdded={fetchData} />
+        {/* Subject Management - Pass User prop for Branch Awareness */}
+        <SubjectManagement 
+          user={user} 
+          onSubjectAdded={() => fetchData(facultyBranchId)} 
+        />
 
         {/* Upload Form */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6 mb-8">
-          {/* ... (Upload form code remains exactly the same) ... */}
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2 bg-blue-100 rounded-lg shrink-0">
               <Upload className="w-6 h-6 text-blue-600" />
@@ -334,6 +358,9 @@ const FacultyCourseMaterials: React.FC<FacultyCourseMaterialsProps> = ({ user })
                     </option>
                   ))}
                 </select>
+                {subjects.length === 0 && (
+                  <p className="text-xs text-red-500 mt-1">No subjects found for your branch. Create one above.</p>
+                )}
               </div>
 
               <div>
@@ -481,7 +508,6 @@ const FacultyCourseMaterials: React.FC<FacultyCourseMaterialsProps> = ({ user })
                         </td>
                         <td className="px-6 py-4">
                           <button
-                            // 6. UPDATED: Call custom modal function
                             onClick={() => confirmDeleteMaterial(material)}
                             className="text-red-600 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-all"
                             title="Delete"
@@ -507,7 +533,6 @@ const FacultyCourseMaterials: React.FC<FacultyCourseMaterialsProps> = ({ user })
                         )}
                       </div>
                       <button
-                        // 7. UPDATED: Call custom modal function
                         onClick={() => confirmDeleteMaterial(material)}
                         className="text-red-600 p-1.5 bg-red-50 rounded-lg shrink-0"
                       >
@@ -517,7 +542,7 @@ const FacultyCourseMaterials: React.FC<FacultyCourseMaterialsProps> = ({ user })
                     
                     <div className="space-y-2 text-sm text-gray-600">
                       <div className="flex items-center justify-between">
-                         <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${getMaterialTypeColor(material.material_type)}`}>
+                          <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${getMaterialTypeColor(material.material_type)}`}>
                             {material.material_type}
                           </span>
                       </div>

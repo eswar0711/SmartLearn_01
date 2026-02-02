@@ -1,7 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import type { Question, Submission } from '../utils/supabaseClient';
-import { X, Download } from 'lucide-react';
+import { 
+  X, 
+  Download, 
+  CheckCircle, 
+  XCircle, 
+  HelpCircle, 
+  FileText,
+  AlertCircle,
+  Eye // Imported Eye icon for View button
+} from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'react-toastify';
 import PremiumLoader from '../layouts/PremiumLoader';
@@ -26,6 +35,9 @@ const AssessmentSubmissions: React.FC<AssessmentSubmissionsProps> = ({
   const [loading, setLoading] = useState(true);
   const [editScores, setEditScores] = useState<Record<string, string>>({});
   const [isExporting, setIsExporting] = useState(false);
+  
+  // State for the currently selected submission to view in modal
+  const [selectedSubmission, setSelectedSubmission] = useState<SubmissionWithUser | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -80,7 +92,8 @@ const AssessmentSubmissions: React.FC<AssessmentSubmissionsProps> = ({
     const { data: qs } = await supabase
       .from('questions')
       .select('*')
-      .eq('assessment_id', assessmentId);
+      .eq('assessment_id', assessmentId)
+      .order('created_at', { ascending: true }); 
 
     setQuestions(qs || []);
     setLoading(false);
@@ -109,7 +122,11 @@ const AssessmentSubmissions: React.FC<AssessmentSubmissionsProps> = ({
     }
 
     toast.success('Score saved successfully!');
-    fetchData(); // Refresh data
+    fetchData(); 
+    // Update local state if viewing specific submission
+    if (selectedSubmission && selectedSubmission.id === submissionId) {
+        setSelectedSubmission(prev => prev ? {...prev, theory_score: score} : null);
+    }
   };
 
   const getTheoryQuestions = () => {
@@ -129,6 +146,13 @@ const AssessmentSubmissions: React.FC<AssessmentSubmissionsProps> = ({
     return getTheoryQuestions().reduce((sum, q) => sum + q.marks, 0);
   };
 
+  const getAnswerStatus = (studentAns: any, correctAns: string) => {
+    if (!studentAns) return 'neutral';
+    return String(studentAns).trim().toLowerCase() === String(correctAns).trim().toLowerCase()
+      ? 'correct'
+      : 'incorrect';
+  };
+
   const downloadExcel = async () => {
     if (submissions.length === 0) {
       toast.warning('No submissions to export');
@@ -140,7 +164,6 @@ const AssessmentSubmissions: React.FC<AssessmentSubmissionsProps> = ({
     try {
       const assessmentTitle = submissions[0]?.assessment_title || 'Assessment';
 
-      // Create Summary Sheet Data
       const summaryData = submissions.map((sub) => ({
         'Student Name': sub.student_name || '-',
         'Student Email': sub.student_email || '-',
@@ -153,11 +176,9 @@ const AssessmentSubmissions: React.FC<AssessmentSubmissionsProps> = ({
          'Status': sub.theory_score === null ? 'Pending' : 'Graded',
       }));
 
-      // Create Detailed Sheet Data
       const detailedData: any[] = [];
 
       submissions.forEach((sub, idx) => {
-        // Add student header
         detailedData.push({
           'Student Name': sub.student_name,
           'Email': sub.student_email,
@@ -168,10 +189,8 @@ const AssessmentSubmissions: React.FC<AssessmentSubmissionsProps> = ({
           'Total Score': sub.total_score || 0,
         });
 
-        // Add empty row
         detailedData.push({});
 
-        // Add theory questions and answers
         const theoryAnswers = getTheoryAnswers(sub);
         if (theoryAnswers.length > 0) {
           theoryAnswers.forEach((answer, qIdx) => {
@@ -189,65 +208,44 @@ const AssessmentSubmissions: React.FC<AssessmentSubmissionsProps> = ({
           });
         }
 
-        // Add separator
         if (idx < submissions.length - 1) {
           detailedData.push({});
         }
       });
 
-      // Create workbook
       const wb = XLSX.utils.book_new();
 
-      // Add Summary Sheet
       const summarySheet = XLSX.utils.json_to_sheet(summaryData);
       summarySheet['!cols'] = [
-        { wch: 25 },
-        { wch: 30 },
-        { wch: 20 },
-        { wch: 12 },
-        { wch: 12 },
-        { wch: 12 },
+        { wch: 25 }, { wch: 30 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
       ];
       XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
 
-      // Add Detailed Sheet
       const detailedSheet = XLSX.utils.json_to_sheet(detailedData);
       detailedSheet['!cols'] = [
-        { wch: 18 },
-        { wch: 50 },
-        { wch: 12 },
-        { wch: 40 },
-        { wch: 12 },
+        { wch: 18 }, { wch: 50 }, { wch: 12 }, { wch: 40 }, { wch: 12 },
       ];
       XLSX.utils.book_append_sheet(wb, detailedSheet, 'Detailed Answers');
 
-      // Generate filename with assessment name and date
       const dateStr = new Date().toISOString().split('T')[0];
       const filename = `${assessmentTitle}_Submissions_${dateStr}.xlsx`;
 
-      // Save file
       XLSX.writeFile(wb, filename);
 
-      toast.success(`Excel file "${filename}" downloaded successfully!`, {
-        position: 'top-right',
-        autoClose: 4000,
-      });
+      toast.success(`Excel file "${filename}" downloaded successfully!`);
     } catch (error) {
       console.error('Error exporting Excel:', error);
-      toast.error('Failed to export Excel file', {
-        position: 'top-right',
-        autoClose: 4000,
-      });
+      toast.error('Failed to export Excel file');
     } finally {
       setIsExporting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4 backdrop-blur-sm">
       <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+        {/* Main Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-white">
           <div>
             <h2 className="text-2xl font-bold text-gray-800">Assessment Submissions</h2>
             <p className="text-sm text-gray-600 mt-1">
@@ -259,7 +257,6 @@ const AssessmentSubmissions: React.FC<AssessmentSubmissionsProps> = ({
               onClick={downloadExcel}
               disabled={isExporting || submissions.length === 0}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Download submissions as Excel"
             >
               {isExporting ? (
                 <>
@@ -275,113 +272,60 @@ const AssessmentSubmissions: React.FC<AssessmentSubmissionsProps> = ({
             </button>
             <button
               onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 transition-colors"
+              className="text-gray-500 hover:text-gray-700 transition-colors p-2 hover:bg-gray-100 rounded-full"
             >
               <X className="w-6 h-6" />
             </button>
           </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        {/* List of Submissions */}
+        <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
           {loading ? (
-            <PremiumLoader message="Loading submissions..." />
-            // <div className="text-center py-8 text-gray-600">Loading submissions...</div>
-            
+            <div className="flex items-center justify-center h-full">
+               <PremiumLoader message="Loading submissions..." />
+            </div>
           ) : submissions.length === 0 ? (
-            <div className="text-center py-8 text-gray-600">
-              No submissions yet for this assessment.
+            <div className="text-center py-12 text-gray-600">
+              <div className="bg-white p-6 rounded-full inline-block mb-4 shadow-sm">
+                <FileText className="w-12 h-12 text-gray-300" />
+              </div>
+              <h3 className="text-lg font-medium text-gray-900">No submissions yet</h3>
+              <p className="text-gray-500 mt-1">When students complete this assessment, their work will appear here.</p>
             </div>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-4">
               {submissions.map((sub) => (
                 <div
                   key={sub.id}
-                  className="bg-gray-50 rounded-lg border border-gray-200 p-6"
+                  className="bg-white rounded-lg border border-gray-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:shadow-sm transition-shadow"
                 >
-                  {/* Student Info */}
-                  <div className="flex items-start justify-between mb-4 pb-4 border-b border-gray-300">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800">
-                        {sub.student_name}
-                      </h3>
-                      <p className="text-sm text-gray-600">{sub.student_email}</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Submitted: {new Date(sub.submitted_at).toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm text-gray-600">MCQ Score</div>
-                      <div className="text-2xl font-bold text-green-600">{sub.mcq_score}</div>
+                  {/* Student Summary */}
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800">
+                      {sub.student_name}
+                    </h3>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-gray-600 mt-1">
+                      <span>{sub.student_email}</span>
+                      <span className="hidden sm:inline">•</span>
+                      <span>Submitted: {new Date(sub.submitted_at).toLocaleString()}</span>
                     </div>
                   </div>
 
-                  {/* Theory Questions & Answers */}
-                  {getTheoryAnswers(sub).length > 0 ? (
-                    <div className="space-y-4">
-                      <h4 className="font-semibold text-gray-700">Theory Answers:</h4>
-                      {getTheoryAnswers(sub).map((item, idx) => (
-                        <div key={idx} className="bg-white rounded p-4 border border-gray-200">
-                          <div className="font-medium text-gray-800 mb-2">
-                            Q{idx + 1}: {item.questionText}
-                            <span className="ml-2 text-sm text-gray-500">
-                              (Max: {item.maxMarks} marks)
-                            </span>
-                          </div>
-                          <div className="text-gray-700 bg-gray-50 p-3 rounded border border-gray-200">
-                            {item.studentAnswer}
-                          </div>
-                        </div>
-                      ))}
-
-                      {/* Grading Section */}
-                      <div className="flex items-center gap-4 mt-4 bg-blue-50 p-4 rounded border border-blue-200">
-                        <div className="flex-1">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Theory Score (Max: {getTotalTheoryMarks()})
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            max={getTotalTheoryMarks()}
-                            value={
-                              editScores[sub.id] !== undefined
-                                ? editScores[sub.id]
-                                : sub.theory_score ?? ''
-                            }
-                            onChange={(e) => handleScoreChange(sub.id, e.target.value)}
-                            className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            placeholder="Enter marks"
-                          />
-                        </div>
-                        <button
-                          onClick={() => saveTheoryScore(sub.id)}
-                          className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors"
-                        >
-                          Save Score
-                        </button>
-                        <div className="text-sm">
-                          <span className="font-medium">Status: </span>
-                          <span
-                            className={`px-3 py-1 rounded-full text-xs font-medium ${
-                              sub.theory_score === null
-                                ? 'bg-yellow-100 text-yellow-700'
-                                : 'bg-green-100 text-green-700'
-                            }`}
-                          >
-                            {sub.theory_score === null ? 'Pending' : 'Graded'}
-                          </span>
-                        </div>
-                      </div>
+                  {/* Scores & Action */}
+                  <div className="flex items-center gap-4 sm:gap-6 self-end sm:self-auto">
+                    <div className="text-right">
+                        <div className="text-xs font-bold text-gray-500 uppercase tracking-wide">Total</div>
+                        <div className="text-xl font-bold text-green-600">{sub.total_score}</div>
                     </div>
-                  ) : (
-                    <div className="text-gray-600 text-sm">No theory questions in this assessment.</div>
-                  )}
-
-                  {/* Total Score */}
-                  <div className="mt-4 pt-4 border-t border-gray-300 flex justify-between items-center">
-                    <span className="font-medium text-gray-700">Total Score:</span>
-                    <span className="text-xl font-bold text-blue-600">{sub.total_score}%</span>
+                    
+                    <button
+                        onClick={() => setSelectedSubmission(sub)}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 font-medium rounded-lg transition-colors border border-blue-200"
+                    >
+                        <Eye className="w-4 h-4" />
+                        View Details
+                    </button>
                   </div>
                 </div>
               ))}
@@ -389,6 +333,171 @@ const AssessmentSubmissions: React.FC<AssessmentSubmissionsProps> = ({
           )}
         </div>
       </div>
+
+      {/* --- Detailed View Modal --- */}
+      {selectedSubmission && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-[60] p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+                {/* Modal Header */}
+                <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gray-50">
+                    <div>
+                        <h3 className="text-xl font-bold text-gray-800">{selectedSubmission.student_name}</h3>
+                        <p className="text-sm text-gray-500">{selectedSubmission.student_email}</p>
+                    </div>
+                    <button onClick={() => setSelectedSubmission(null)} className="p-2 hover:bg-gray-200 rounded-full text-gray-500 transition-colors">
+                        <X className="w-6 h-6" />
+                    </button>
+                </div>
+
+                {/* Modal Content (Scrollable) */}
+                <div className="flex-1 overflow-y-auto p-6 bg-white">
+                    
+                    {/* Score Summary Card */}
+                    <div className="grid grid-cols-2 gap-4 mb-8">
+                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-center">
+                            <p className="text-xs font-bold text-blue-500 uppercase mb-1">MCQ Score</p>
+                            <p className="text-2xl font-bold text-blue-700">{selectedSubmission.mcq_score}</p>
+                        </div>
+                        <div className="bg-green-50 p-4 rounded-lg border border-green-100 text-center">
+                            <p className="text-xs font-bold text-green-500 uppercase mb-1">Total Score</p>
+                            <p className="text-2xl font-bold text-green-700">{selectedSubmission.total_score}</p>
+                        </div>
+                    </div>
+
+                    <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-4 flex items-center gap-2">
+                      <FileText className="w-4 h-4" /> Detailed Responses
+                    </h4>
+
+                    {/* Questions List */}
+                    <div className="space-y-6">
+                      {questions.map((q, idx) => {
+                        const studentAnswer = selectedSubmission.answers[q.id];
+                        const isTheory = q.type === 'Theory';
+                        const status = !isTheory ? getAnswerStatus(studentAnswer, q.correct_answer || '') : 'neutral';
+
+                        return (
+                          <div key={q.id} className="bg-white border border-gray-200 rounded-lg p-5 hover:border-gray-300 transition-colors shadow-sm">
+                            <div className="flex gap-3">
+                              {/* Icon Indicator */}
+                              <div className="mt-0.5 flex-shrink-0">
+                                {isTheory ? (
+                                  <HelpCircle className="w-5 h-5 text-purple-500" />
+                                ) : status === 'correct' ? (
+                                  <CheckCircle className="w-5 h-5 text-green-500" />
+                                ) : (
+                                  <XCircle className="w-5 h-5 text-red-500" />
+                                )}
+                              </div>
+
+                              <div className="flex-1">
+                                {/* Question Text */}
+                                <div className="flex justify-between gap-4 mb-3">
+                                  <div className="text-base font-medium text-gray-900">
+                                    <span className="text-gray-500 mr-2 font-bold">Q{idx + 1}.</span>
+                                    {q.question_text}
+                                  </div>
+                                  <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded h-fit whitespace-nowrap">
+                                    {q.marks} Marks
+                                  </span>
+                                </div>
+
+                                {/* Answers Grid */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  {/* Student Answer */}
+                                  <div className={`p-4 rounded-lg border ${
+                                    isTheory 
+                                      ? 'bg-purple-50 border-purple-100' 
+                                      : status === 'correct' 
+                                        ? 'bg-green-50 border-green-100' 
+                                        : 'bg-red-50 border-red-100'
+                                  }`}>
+                                    <p className="text-xs font-bold uppercase mb-1 opacity-70">
+                                      Student Answer
+                                    </p>
+                                    <p className="text-sm font-medium text-gray-800 break-words">
+                                      {studentAnswer || <span className="italic opacity-50">No answer provided</span>}
+                                    </p>
+                                  </div>
+
+                                  {/* Correct Answer (Only for MCQs) */}
+                                  {!isTheory && (
+                                    <div className="p-4 rounded-lg border bg-gray-50 border-gray-100">
+                                      <p className="text-xs font-bold uppercase text-gray-500 mb-1">
+                                        Correct Answer
+                                      </p>
+                                      <p className="text-sm font-medium text-gray-700 break-words">
+                                        {q.correct_answer}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Manual Grading Section (Only if Theory Questions Exist) */}
+                    {getTotalTheoryMarks() > 0 && (
+                      <div className="bg-yellow-50 rounded-xl p-5 border border-yellow-100 mt-8">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div>
+                            <h4 className="text-yellow-900 font-bold flex items-center gap-2">
+                              <AlertCircle className="w-5 h-5" />
+                              Manual Grading Required
+                            </h4>
+                            <p className="text-sm text-yellow-800 mt-1">
+                              Review the theory answers above and assign a score.
+                            </p>
+                          </div>
+                          
+                          <div className="flex items-center gap-3 bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
+                            <div className="px-2">
+                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                                Theory Score (Max: {getTotalTheoryMarks()})
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                max={getTotalTheoryMarks()}
+                                value={
+                                  editScores[selectedSubmission.id] !== undefined
+                                    ? editScores[selectedSubmission.id]
+                                    : selectedSubmission.theory_score ?? ''
+                                }
+                                onChange={(e) => handleScoreChange(selectedSubmission.id, e.target.value)}
+                                className="w-full text-xl font-bold text-gray-900 border-none focus:ring-0 p-0 placeholder-gray-300 bg-transparent outline-none"
+                                placeholder="0"
+                              />
+                            </div>
+                            <button
+                              onClick={() => saveTheoryScore(selectedSubmission.id)}
+                              className="px-6 py-2 bg-yellow-600 hover:bg-yellow-700 text-white text-sm font-bold rounded-lg transition-colors shadow-sm"
+                            >
+                              Save Score
+                            </button>
+                          </div>
+                        </div>
+                        <div className="mt-3 text-right">
+                           <span className="text-xs font-bold text-gray-500 uppercase tracking-wide mr-2">Grading Status:</span>
+                           <span className={`px-2 py-1 rounded text-xs font-bold ${selectedSubmission.theory_score === null ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                             {selectedSubmission.theory_score === null ? 'Pending' : 'Graded'}
+                           </span>
+                        </div>
+                      </div>
+                    )}
+
+                </div>
+                {/* Modal Footer */}
+                <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-end">
+                    <button onClick={() => setSelectedSubmission(null)} className="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium rounded-lg transition-colors">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 };

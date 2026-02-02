@@ -469,6 +469,31 @@ export const updatePassword = async (newPassword: string) => {
   }
 };
 
+
+/* 🔍 Check if user exists */
+export const checkUserExistsByEmail = async (email: string) => {
+  const { data, error } = await supabase
+    .from('users') // 👈 change if your table name is different
+    .select('id')
+    .eq('email', email)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    throw error;
+  }
+
+  return !!data; // true if user exists
+};
+
+/* 📩 Send reset email */
+export const sendPasswordResetEmail = async (email: string) => {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/reset-password`,
+  });
+
+  if (error) throw error;
+};
+
 // =====================================================
 // ADMIN: BLOCK/UNBLOCK USER
 // =====================================================

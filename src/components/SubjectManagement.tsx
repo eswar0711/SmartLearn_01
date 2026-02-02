@@ -1,16 +1,22 @@
-// src/components/SubjectManagement.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, GitBranch } from 'lucide-react';
+// ✅ FIX: Import 'User' from your local utils, NOT @supabase/supabase-js
+import type { User } from '../utils/supabaseClient';
 
 interface SubjectManagementProps {
+  user: User; 
   onSubjectAdded: () => void;
 }
 
-const SubjectManagement: React.FC<SubjectManagementProps> = ({ onSubjectAdded }) => {
+const SubjectManagement: React.FC<SubjectManagementProps> = ({ user, onSubjectAdded }) => {
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
   
+  // Branch State
+  const [branchId, setBranchId] = useState<string | null>(null);
+  const [branchName, setBranchName] = useState<string>('');
+
   // Form state
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
@@ -18,11 +24,42 @@ const SubjectManagement: React.FC<SubjectManagementProps> = ({ onSubjectAdded })
   const [department, setDepartment] = useState('');
   const [description, setDescription] = useState('');
 
+  // Fetch User's Branch on Mount
+  useEffect(() => {
+    const fetchUserBranch = async () => {
+      try {
+        const { data: userData, error } = await supabase
+          .from('users')
+          .select('branch_id, branches(name)')
+          .eq('id', user.id)
+          .single();
+
+        if (error) throw error;
+
+        if (userData?.branch_id) {
+          setBranchId(userData.branch_id);
+          // @ts-ignore
+          setBranchName(userData.branches?.name || 'General');
+        }
+      } catch (error) {
+        console.error('Error fetching branch:', error);
+      }
+    };
+
+    fetchUserBranch();
+  }, [user.id]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
+      if (!branchId) {
+        alert('Error: You are not assigned to a branch. Cannot add subject.');
+        setLoading(false);
+        return;
+      }
+
       const { error } = await supabase
         .from('subjects')
         .insert({
@@ -31,11 +68,12 @@ const SubjectManagement: React.FC<SubjectManagementProps> = ({ onSubjectAdded })
           semester,
           department,
           description: description || null,
+          branch_id: branchId, // Auto-assign to user's branch
         });
 
       if (error) throw error;
 
-      alert('Subject added successfully!');
+      alert(`Subject added successfully to ${branchName} branch!`);
       
       // Reset form
       setName('');
@@ -70,7 +108,15 @@ const SubjectManagement: React.FC<SubjectManagementProps> = ({ onSubjectAdded })
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-800">Add New Subject</h3>
+        <div>
+          <h3 className="text-lg font-semibold text-gray-800">Add New Subject</h3>
+          {branchName && (
+            <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
+              <GitBranch className="w-3 h-3" />
+              Adding to <strong>{branchName}</strong>
+            </p>
+          )}
+        </div>
         <button
           onClick={() => setShowForm(false)}
           className="text-gray-500 hover:text-gray-700"
@@ -164,7 +210,7 @@ const SubjectManagement: React.FC<SubjectManagementProps> = ({ onSubjectAdded })
         <div className="flex gap-3">
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !branchId}
             className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
           >
             {loading ? 'Adding...' : 'Add Subject'}

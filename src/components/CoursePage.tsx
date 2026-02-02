@@ -5,6 +5,7 @@ import type { User, Subject, CourseMaterial } from '../utils/supabaseClient';
 //import NavigationSidebar from './NavigationSidebar';
 import { BookOpen, Download, FileText, Calendar } from 'lucide-react';
 import PremiumLoader from '../layouts/PremiumLoader';
+
 interface CoursePageProps {
   user: User;
 }
@@ -13,36 +14,74 @@ interface SubjectWithMaterials extends Subject {
   materials: CourseMaterial[];
 }
 
-const CoursePage: React.FC<CoursePageProps> = () => {
+const CoursePage: React.FC<CoursePageProps> = ({ user }) => {
   const [subjects, setSubjects] = useState<SubjectWithMaterials[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedSemester, setSelectedSemester] = useState<number>(3); // Default semester
+  const [selectedSemester, setSelectedSemester] = useState<number>(1); // Default to Semester 1
+  const [studentBranchId, setStudentBranchId] = useState<string | null>(null);
 
+  // 1. Fetch Student Branch on Mount
   useEffect(() => {
-    fetchCourses();
-  }, [selectedSemester]);
+    const fetchStudentProfile = async () => {
+      try {
+        const { data: userData, error } = await supabase
+          .from('users')
+          .select('branch_id')
+          .eq('id', user.id)
+          .single();
 
-  const fetchCourses = async () => {
+        if (error) throw error;
+        setStudentBranchId(userData?.branch_id);
+      } catch (error) {
+        console.error('Error fetching student profile:', error);
+      }
+    };
+
+    fetchStudentProfile();
+  }, [user.id]);
+
+  // 2. Fetch Courses whenever Semester or Branch changes
+  useEffect(() => {
+    if (studentBranchId) {
+      fetchCourses(studentBranchId);
+    } else if (!loading && !studentBranchId) {
+       // If loading is done but no branch found, we might want to fetch without branch or show empty
+       // Here we wait for branch ID to be set.
+       setLoading(false); 
+    }
+  }, [selectedSemester, studentBranchId]);
+
+  const fetchCourses = async (branchId: string) => {
     setLoading(true);
     try {
-      // Fetch subjects for selected semester
+      // Fetch subjects for selected semester AND student's branch
       const { data: subjectsData, error: subjectsError } = await supabase
         .from('subjects')
         .select('*')
         .eq('semester', selectedSemester)
+        .eq('branch_id', branchId) // ⭐ Filter by Branch
         .order('code');
 
       if (subjectsError) throw subjectsError;
 
-      // Fetch all course materials for this semester
-      const { data: materialsData } = await supabase
+      if (!subjectsData || subjectsData.length === 0) {
+        setSubjects([]);
+        return;
+      }
+
+      // Fetch all course materials for this semester (Filtering by subject IDs is safer/cleaner)
+      const subjectIds = subjectsData.map(s => s.id);
+      
+      const { data: materialsData, error: materialsError } = await supabase
         .from('course_materials')
         .select('*')
-        .eq('semester', selectedSemester)
+        .in('subject_id', subjectIds) // ⭐ Get materials only for these subjects
         .order('created_at', { ascending: false });
 
+      if (materialsError) throw materialsError;
+
       // Combine subjects with their materials
-      const subjectsWithMaterials: SubjectWithMaterials[] = (subjectsData || []).map(subject => ({
+      const subjectsWithMaterials: SubjectWithMaterials[] = subjectsData.map(subject => ({
         ...subject,
         materials: (materialsData || []).filter(m => m.subject_id === subject.id),
       }));
@@ -96,7 +135,7 @@ const CoursePage: React.FC<CoursePageProps> = () => {
     return (
       <div className="flex">
         {/* <NavigationSidebar user={user} /> */}
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center h-screen">
           <PremiumLoader message="Loading course materials..." />
         </div>
       </div>
@@ -133,7 +172,11 @@ const CoursePage: React.FC<CoursePageProps> = () => {
         {subjects.length === 0 ? (
           <div className="bg-white rounded-xl p-8 text-center shadow-sm border border-gray-200">
             <BookOpen className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600">No courses available for Semester {selectedSemester}</p>
+            <p className="text-gray-600">
+              {studentBranchId 
+                ? `No courses available for Semester ${selectedSemester}`
+                : "Please contact admin to assign a branch to your profile."}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

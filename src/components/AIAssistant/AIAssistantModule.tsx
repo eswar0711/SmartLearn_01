@@ -139,7 +139,35 @@ const AIAssistantModule: React.FC<AIAssistantModuleProps> = ({ user }) => {
     setIsLoading(true);
 
     try {
-      const aiResponse = await sendMessageToAI(conversationHistory.current, user.full_name);
+      // --- START UPDATED SECTION ---
+      
+      // Get current date/time context
+      const now = new Date();
+      const dateTimeString = now.toLocaleString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+        timeZoneName: 'short'
+      });
+
+      // Construct a "System Message" with the time context
+      // We do NOT add this to conversationHistory or UI, only to the API call
+      const systemMessage = {
+        role: 'system',
+        content: `Current system Date and Time: ${dateTimeString}. You are a helpful AI study assistant.`
+      };
+
+      // Create a temporary payload including the system message + history
+      // We cast as 'any' here just in case your Message interface doesn't include 'system' role yet
+      const apiPayload = [systemMessage, ...conversationHistory.current] as any;
+
+      const aiResponse = await sendMessageToAI(apiPayload, user.full_name);
+
+      // --- END UPDATED SECTION ---
 
       // Add AI response to UI
       const aiChatMessage: ChatMessageType = {

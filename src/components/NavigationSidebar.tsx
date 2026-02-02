@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import logo from '../assets/onlylogo.jpeg';
+import Navbarlogo from '../assets/NavbarIMG.jpg';
 import {
   BookOpen,
   LogOut,
@@ -99,6 +100,20 @@ const NavigationSidebar: React.FC<NavigationSidebarProps> = ({ user }) => {
         md:translate-x-0
         flex flex-col overflow-hidden`}   // <- key layout change
       >
+        
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: `url(${Navbarlogo})`,
+            backgroundRepeat: 'no-repeat',
+            backgroundPosition: 'center',
+            backgroundSize: '480px',
+            opacity: 0.19,
+          }}
+        />
+
+        <div className="relative z-10 flex flex-col h-full">
+        
         {/* Header (fixed) */}
         <div className="flex-shrink-0 p-6 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex items-center gap-2 mb-3">
@@ -262,6 +277,7 @@ const NavigationSidebar: React.FC<NavigationSidebarProps> = ({ user }) => {
             <LogOut className="w-5 h-5" />
             Sign Out
           </button>
+        </div>
         </div>
       </aside>
 

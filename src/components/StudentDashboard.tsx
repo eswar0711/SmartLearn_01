@@ -180,6 +180,9 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ user }) => {
           <h2 className="text-3xl font-extrabold mb-2 bg-gradient-to-r from-purple-800 to-gray-800 bg-clip-text text-transparent">
             Student Dashboard
           </h2>
+          {/* <p className="text-gray-600">
+              Welcome   <span className="font-semibold text-gray-800">{user.full_name || 'Student'}</span>
+            </p> */}
           <p className="text-gray-600">
             {studentBranch ? 'View assessments for your branch' : 'View available assessments'}
           </p>

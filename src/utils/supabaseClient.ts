@@ -48,6 +48,7 @@ export interface UserProfile {
   email: string;
   full_name: string;
   role: 'faculty' | 'student' | 'admin';
+  branch_id?: string | null;   // ⭐ ADD THIS
   phone?: string;
   department?: string;
   profile_picture_url?: string;
@@ -58,6 +59,14 @@ export interface UserProfile {
   updated_at: string;
 }
 
+export interface Branch {
+  id: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+
 export interface Assessment {
   id: string;
   faculty_id: string;
@@ -66,6 +75,8 @@ export interface Assessment {
   title: string;
   duration_minutes: number;
   created_at: string;
+  branch_id?: string | null;
+
 }
 
 export interface Question {

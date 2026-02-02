@@ -8,8 +8,10 @@ import {
   Search,
   Plus,
   X,
-  GitBranch
+  GitBranch,
+  AlertTriangle // Imported for the warning modal
 } from 'lucide-react';
+import PremiumLoader from '../../layouts/PremiumLoader'; 
 
 interface AdminUserManagementProps {
   user: any;
@@ -41,10 +43,14 @@ const AdminUserManagement: React.FC<AdminUserManagementProps> = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'student' | 'faculty' | 'admin'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'blocked'>('all');
+  
+  // Modal States
   const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false); // NEW: State for delete confirmation
+  
   const [actionLoading, setActionLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
-  
+   
   // Branch State
   const [branches, setBranches] = useState<any[]>([]);
   const [showBranchModal, setShowBranchModal] = useState(false);
@@ -190,105 +196,117 @@ const AdminUserManagement: React.FC<AdminUserManagementProps> = () => {
     setFilteredUsers(filtered);
   };
 
-  const addNewUser = async () => {
+const addNewUser = async () => {
     try {
       setAddUserError('');
       setActionLoading(true);
 
+      // 1. Validation
       if (!addUserForm.email || !addUserForm.password || !addUserForm.full_name) {
         setAddUserError('❌ All fields are required!');
         setActionLoading(false);
         return;
       }
-
       if (addUserForm.password.length < 6) {
         setAddUserError('❌ Password must be at least 6 characters!');
         setActionLoading(false);
         return;
       }
-      if (addUserForm.role === 'student' && !addUserForm.branch_id) {
-        setAddUserError('❌ Please select a branch for student');
+      // Require branch for Faculty/Student
+      if ((addUserForm.role === 'student' || addUserForm.role === 'faculty') && !addUserForm.branch_id) {
+        setAddUserError(`❌ Please select a branch for the ${addUserForm.role}`);
         setActionLoading(false);
         return;
       }
 
-      // Create a temporary Supabase client that DOES NOT persist session
+      // 2. Create Auth User (using temp client to avoid logging out admin)
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-      if (!supabaseUrl || !supabaseKey) {
-        throw new Error('Supabase environment variables are missing!');
-      }
+      if (!supabaseUrl || !supabaseKey) throw new Error('Supabase vars missing');
 
       const tempSupabase = createClient(supabaseUrl, supabaseKey, {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-          detectSessionInUrl: false,
-        },
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
       });
 
-      // STEP 1: Create user in auth.users
       const { data: authData, error: authError } = await tempSupabase.auth.signUp({
         email: addUserForm.email,
-        password: addUserForm.password
+        password: addUserForm.password,
+        options: {
+          data: {
+            full_name: addUserForm.full_name,
+            role: addUserForm.role,
+          }
+        }
       });
 
       if (authError) {
-        setAddUserError(`❌ Error creating auth user: ${authError.message}`);
+        setAddUserError(`❌ Auth Error: ${authError.message}`);
         setActionLoading(false);
         return;
       }
 
       if (!authData.user?.id) {
-        setAddUserError('❌ Failed to create user account');
+        setAddUserError('❌ User created but ID missing.');
         setActionLoading(false);
         return;
       }
 
       const userId = authData.user.id;
+      const branchIdToSave = (addUserForm.role === 'student' || addUserForm.role === 'faculty') 
+        ? addUserForm.branch_id 
+        : null;
 
-      // STEP 2: Add to user_profiles table
+      // 3. Prepare Data Objects
+      const userProfileData = {
+        id: userId,
+        email: addUserForm.email,
+        full_name: addUserForm.full_name,
+        role: addUserForm.role,
+        branch_id: branchIdToSave,
+        is_active: true,
+        is_blocked: false,
+        created_at: new Date().toISOString()
+      };
+
+      const publicUserData = {
+        id: userId,
+        email: addUserForm.email,
+        full_name: addUserForm.full_name,
+        role: addUserForm.role,
+        branch_id: branchIdToSave,
+        is_active: true,
+        is_blocked: false,
+        created_at: new Date().toISOString()
+      };
+
+      // 4. Insert into BOTH tables explicitly
+      // We use Promise.allsettled or sequential to ensure we catch specific errors
+      console.log("Inserting into user_profiles...");
       const { error: profileError } = await supabase
         .from('user_profiles')
-        .insert({
-          id: userId,
-          email: addUserForm.email,
-          full_name: addUserForm.full_name,
-          role: addUserForm.role,
-          branch_id: addUserForm.role === 'student' ? addUserForm.branch_id || null : null,
-          is_active: true,
-          is_blocked: false
-        });
+        .insert(userProfileData);
 
       if (profileError) {
-        setAddUserError(`❌ Error creating profile: ${profileError.message}`);
-        setActionLoading(false);
-        return;
+        console.error("Profile Insert Error:", profileError);
+        // Don't return yet, try to insert into users table too so we don't have partial data state
+        setAddUserError(`Warning: Profile insert failed (${profileError.message}), but Auth user created.`);
       }
 
-      // STEP 3: Add to users table
+      console.log("Inserting into users...");
       const { error: usersError } = await supabase
         .from('users')
-        .insert({
-          id: userId,
-          email: addUserForm.email,
-          full_name: addUserForm.full_name,
-          role: addUserForm.role,
-          is_active: true,
-          is_blocked: false,
-          branch_id: addUserForm.role === 'student' ? addUserForm.branch_id || null : null,
-          created_at: new Date().toISOString()
-        });
+        .insert(publicUserData);
 
       if (usersError) {
-        setAddUserError(`❌ Error adding to users table: ${usersError.message}`);
-        setActionLoading(false);
-        return;
+        console.error("Users Table Insert Error:", usersError);
+        setAddUserError(`Error: ${usersError.message}`);
+        return; // Stop here if this fails
       }
 
+      // 5. Success
       setSuccessMessage(
-        `✅ ${addUserForm.role === 'student' ? 'Student' : 'Faculty'} "${addUserForm.full_name}" created successfully!`
+        `✅ ${addUserForm.role} "${addUserForm.full_name}" created successfully!`
       );
       setTimeout(() => setSuccessMessage(''), 3000);
 
@@ -302,9 +320,10 @@ const AdminUserManagement: React.FC<AdminUserManagementProps> = () => {
 
       setShowAddUserModal(false);
       fetchUsers();
-    } catch (error) {
-      console.error('❌ Error:', error);
-      setAddUserError(error instanceof Error ? error.message : 'Something went wrong');
+
+    } catch (error: any) {
+      console.error('❌ Critical Error:', error);
+      setAddUserError(error.message || 'Something went wrong');
     } finally {
       setActionLoading(false);
     }
@@ -405,9 +424,8 @@ const AdminUserManagement: React.FC<AdminUserManagementProps> = () => {
     }
   };
 
+  // ✅ UPDATED: Function just handles the logic, no window.confirm here
   const deleteUser = async (userId: string) => {
-    if (!window.confirm('⚠️ Are you sure you want to delete this user? This action cannot be undone.')) return;
-
     try {
       setActionLoading(true);
 
@@ -428,6 +446,7 @@ const AdminUserManagement: React.FC<AdminUserManagementProps> = () => {
 
       setUsers(users.filter(u => u.id !== userId));
       setSelectedUser(null);
+      setShowDeleteConfirm(false); // Close the modal
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Something went wrong');
     } finally {
@@ -439,7 +458,7 @@ const AdminUserManagement: React.FC<AdminUserManagementProps> = () => {
     return (
       <div className="flex">
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-lg text-gray-600">Loading...</div>
+          <PremiumLoader message='loading...'/>
         </div>
       </div>
     );
@@ -823,8 +842,8 @@ const AdminUserManagement: React.FC<AdminUserManagementProps> = () => {
                   <option value="faculty">Faculty</option>
                 </select>
                 
-                {/* Branch Selection for Students */}
-                {addUserForm.role === 'student' && (
+                {/* ✅ FIX: Show Branch Selection for BOTH Faculty and Student */}
+                {addUserForm.role === 'student' || addUserForm.role === 'faculty' ? (
                   <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Branch
@@ -844,7 +863,7 @@ const AdminUserManagement: React.FC<AdminUserManagementProps> = () => {
                       ))}
                     </select>
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
 
@@ -954,7 +973,7 @@ const AdminUserManagement: React.FC<AdminUserManagementProps> = () => {
 
               {/* Delete */}
               <button
-                onClick={() => deleteUser(selectedUser.id)}
+                onClick={() => setShowDeleteConfirm(true)} // ✅ Updated: Triggers the new modal
                 disabled={actionLoading}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-100 text-red-600 rounded-lg font-medium hover:bg-red-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -971,6 +990,41 @@ const AdminUserManagement: React.FC<AdminUserManagementProps> = () => {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NEW: Delete Confirmation Modal */}
+      {showDeleteConfirm && selectedUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full animate-in fade-in zoom-in duration-200">
+            <div className="p-6 text-center">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle className="w-6 h-6 text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-800 mb-2">Delete User?</h3>
+              <p className="text-gray-600 mb-6">
+                Are you sure you want to delete <span className="font-semibold">{selectedUser.full_name}</span>? 
+                This action cannot be undone.
+              </p>
+              
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={actionLoading}
+                  className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => deleteUser(selectedUser.id)}
+                  disabled={actionLoading}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors flex items-center gap-2"
+                >
+                  {actionLoading ? 'Deleting...' : 'Yes, Delete'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

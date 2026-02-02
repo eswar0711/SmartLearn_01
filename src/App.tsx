@@ -34,7 +34,10 @@ import AdminSubmissions from './components/Admin/AdminSubmissions';
 import ResultsSummary from './components/ResultsSummary';
 import SessionLockGuard from './components/SessionLockGuard';
 import FacultyStudentManagement from './components/FacultyStudentManagement';
+import ResetPassword from './pages/ResetPassword';
 import { ToastContainer } from 'react-toastify';
+import AuthListener from './AuthListener';
+
 
 const convertAuthUserToComponentUser = (authUser: AuthUser): any => ({
   id: authUser.id,
@@ -83,7 +86,16 @@ const App: React.FC = () => {
         v7_relativeSplatPath: true,
       }}
     >
+      {/* Password reset Listener & Toasts */}
+
+      <AuthListener />
+      
       <Routes>
+        <Route
+          path="/login"
+          element={!user ? <LoginPage onLogin={checkUser} /> : <Navigate to="/" />}
+        />
+        <Route path="/reset-password" element={<ResetPassword />} />
         
         {/* ✅ ROOT PATH: Shows Landing Page if guest, redirects to Dashboard if logged in */}
         <Route 
