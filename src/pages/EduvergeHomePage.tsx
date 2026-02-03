@@ -39,12 +39,25 @@ export default function EduvergeHomePage() {
 
   // Helper for smooth scroll
   const scrollToSection = (id: string) => {
-    setMobileMenuOpen(false); // Close mobile menu if open
-    const element = document.getElementById(id);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
+  const headerOffset = 90; // height of your fixed header
+
+  const element = document.getElementById(id);
+
+  if (!element) return;
+
+  const elementPosition = element.getBoundingClientRect().top;
+  const offsetPosition =
+    elementPosition + window.pageYOffset - headerOffset;
+
+  window.scrollTo({
+    top: offsetPosition,
+    behavior: "smooth",
+  });
+
+  // close menu AFTER scroll starts
+  setTimeout(() => setMobileMenuOpen(false), 300);
+};
+
 
   const navLinks = [
     { name: "Features", id: "features" },
@@ -113,7 +126,7 @@ export default function EduvergeHomePage() {
               onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
             >
                <div className="w-10 h-10 overflow-hidden rounded-lg bg-white shadow-sm flex items-center justify-center">
-                 <img src={EduvergeLogo} alt="Eduverge" className="w-8 h-8 object-contain" />
+                 <img src={OnlyLogo} alt="Eduverge" className="w-8 h-8 object-contain" />
                </div>
                <span className={`text-xl font-bold tracking-tight ${isScrolled ? "text-slate-800" : "text-slate-800"}`}>
                  EDU<span className="text-indigo-600">VERGE</span>
@@ -134,7 +147,7 @@ export default function EduvergeHomePage() {
              <button
   onClick={() => navigate("/login")}
   className="relative group overflow-hidden flex items-center gap-2 px-6 py-3 rounded-full
-  bg-gradient-to-r from-green-500/40 to-purple-500/40
+  bg-gradient-to-r from-green-500/60 to-purple-500/60
   backdrop-blur-md border border-white/20
   text-white text-sm font-bold
   shadow-[0_8px_32px_rgba(31,38,135,0.37)]
@@ -193,12 +206,40 @@ export default function EduvergeHomePage() {
                   </button>
                 ))}
                 <div className="h-px bg-slate-100 my-2" />
-                <button 
-                  onClick={() => navigate("/login")}
-                  className="w-full py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-lg"
-                >
-                  Login
-                </button>
+               <button
+  onClick={() => navigate("/login")}
+  className="relative group overflow-hidden 
+    flex items-center justify-center gap-2 
+    px-8 py-3.5           /* ← adjusted padding – feels more balanced */
+    min-w-[140px]          /* ← helps prevent it from shrinking too much */
+    rounded-full
+    bg-gradient-to-r from-green-500/60 to-purple-500/60
+    backdrop-blur-md 
+    border border-white/20
+    text-white text-sm font-bold
+    shadow-[0_8px_32px_rgba(31,38,135,0.37)]
+    hover:shadow-[0_0_30px_rgba(255,255,255,0.45)]
+    transition-all duration-300 ease-out
+    hover:-translate-y-1
+    active:scale-95           /* ← small bonus touch */
+  "
+>
+  {/* Moving light sweep */}
+  <span
+    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent
+      translate-x-[-120%] group-hover:translate-x-[120%]
+      transition-transform duration-700 ease-in-out"
+  />
+
+  {/* Edge glow */}
+  <span className="absolute inset-0 rounded-full ring-1 ring-white/30" />
+
+  {/* Button Content – guaranteed centered */}
+  <span className="relative z-10 flex items-center justify-center gap-2">
+    <LogIn size={16} />
+    Login
+  </span>
+</button>
               </div>
             </motion.div>
           )}
