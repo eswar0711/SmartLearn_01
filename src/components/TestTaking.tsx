@@ -17,13 +17,15 @@ import {
   deleteDraftAnswers,
   type TestSession,
 } from '../utils/testTimer';
-import { Clock, AlertCircle, ChevronDown } from 'lucide-react';
+import { Clock, AlertCircle, ChevronDown, Maximize, AlertTriangle, Lock } from 'lucide-react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 interface TestTakingProps {
   user: User;
 }
+
+const MAX_VIOLATIONS = 3;
 
 const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
   const { assessmentId } = useParams<{ assessmentId: string }>();
@@ -37,7 +39,6 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   
-  // 🟢 FIX 3: Track success to unmount "Time Expired" screen
   const [submissionSuccess, setSubmissionSuccess] = useState(false);
   
   const [testSession, setTestSession] = useState<TestSession | null>(null);
@@ -50,14 +51,124 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
   const [hasShownFiveMinWarning, setHasShownFiveMinWarning] = useState(false);
   const [hasShownOneMinWarning, setHasShownOneMinWarning] = useState(false);
 
-  // Refs for accessing latest state in closures
+  // Security State
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false); 
+  const [violationCount, setViolationCount] = useState(0);
+
+  // Refs 
   const answersRef = useRef(answers);
   const questionsRef = useRef(questions);
   const submittingRef = useRef(submitting);
+  const violationRef = useRef(violationCount);
 
   useEffect(() => { answersRef.current = answers; }, [answers]);
   useEffect(() => { questionsRef.current = questions; }, [questions]);
   useEffect(() => { submittingRef.current = submitting; }, [submitting]);
+  useEffect(() => { violationRef.current = violationCount; }, [violationCount]);
+
+  // Persist Violations
+  useEffect(() => {
+    if (testSession && violationCount > 0) {
+      localStorage.setItem(`violations_${testSession.id}`, violationCount.toString());
+    }
+  }, [violationCount, testSession]);
+
+  // ============ SECURITY FEATURES ============
+
+  const triggerFullScreen = async () => {
+    try {
+      const elem = document.documentElement;
+
+      if (!document.fullscreenElement) {
+         if (elem.requestFullscreen) {
+            await elem.requestFullscreen();
+         } else if ((elem as any).webkitRequestFullscreen) {
+            await (elem as any).webkitRequestFullscreen();
+         } else if ((elem as any).msRequestFullscreen) {
+            await (elem as any).msRequestFullscreen();
+         }
+      }
+
+      setTimeout(() => {
+        if (document.fullscreenElement) {
+          setIsFullScreen(true);
+          setHasStarted(true);
+        } else {
+          toast.error("Please allow full screen to proceed.");
+        }
+      }, 300);
+
+    } catch (err) {
+      console.error("Full screen error:", err);
+      toast.error("Full screen blocked. Please click anywhere and try again.");
+    }
+  };
+
+  // Full Screen Watcher
+  useEffect(() => {
+    if (!hasStarted || submissionSuccess) return;
+
+    const handleFullScreenChange = () => {
+      const isCurrentlyFullScreen = !!document.fullscreenElement;
+      setIsFullScreen(isCurrentlyFullScreen);
+
+      // 🛑 FIX: Check submittingRef to ensure we don't punish user during submit
+      if (!isCurrentlyFullScreen && !submittingRef.current && !submissionSuccess) {
+        const newCount = violationRef.current + 1;
+        setViolationCount(newCount);
+
+        if (newCount >= MAX_VIOLATIONS) {
+          toast.error("🚫 Maximum violations exceeded! Auto-submitting test...", {
+            autoClose: false,
+            closeButton: false
+          });
+          handleAutoSubmit();
+        } else {
+          toast.warning(`⚠️ Violation Recorded (${newCount}/${MAX_VIOLATIONS})`);
+        }
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullScreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullScreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullScreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullScreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullScreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullScreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullScreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullScreenChange);
+    };
+  }, [hasStarted, submissionSuccess]);
+
+  // Navigation Blockers
+  useEffect(() => {
+    if (loading || submissionSuccess) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = 'Warning: Leaving this page will end your test session.';
+      return e.returnValue;
+    };
+
+    const handlePopState = () => {
+      window.history.pushState(null, '', window.location.href);
+      toast.warning("🚫 Navigation blocked! You must submit the test to leave.", {
+        toastId: 'nav-block'
+      });
+    };
+
+    window.history.pushState(null, '', window.location.href);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [loading, submissionSuccess]);
 
   // ============ UTILITIES ============
   const formatTime = (seconds: number): string => {
@@ -108,8 +219,7 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
     const initializeTest = async () => {
       try {
         setLoading(true);
-        console.log('🔄 Initializing test...');
-
+        
         // 1. Check if ALREADY SUBMITTED
         const { data: existingSubmission } = await supabase
           .from('submissions')
@@ -119,7 +229,6 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
           .maybeSingle();
 
         if (existingSubmission && existingSubmission.submitted_at) {
-          console.log('✅ Test already submitted. Redirecting...');
           navigate(`/results-summary/${existingSubmission.id}`, { replace: true });
           return;
         }
@@ -150,6 +259,14 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
         const session = await getOrCreateTestSession(assessmentId, assessmentData.duration_minutes);
         setTestSession(session);
 
+        // Restore Violations from LocalStorage
+        const savedViolations = localStorage.getItem(`violations_${session.id}`);
+        if (savedViolations) {
+           const count = parseInt(savedViolations, 10);
+           setViolationCount(count);
+           violationRef.current = count; 
+        }
+
         // 5. Load Drafts
         const draftAnswers = await loadDraftAnswers(session.id);
         setAnswers(draftAnswers);
@@ -159,9 +276,7 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
         const remaining = calculateRemainingTime(session);
         setTimeLeft(remaining);
 
-        // Check expiry on load
         if (remaining <= 0) {
-          console.warn('⚠️ Test loaded but already expired. Triggering submit...');
           setIsTimeExpired(true);
           setTimeout(() => handleAutoSubmit(), 500); 
         }
@@ -177,14 +292,13 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
     initializeTest();
   }, [assessmentId, user.id, navigate]);
 
-  // ============ 🟢 FIX 1: TIMER COUNTDOWN (Removed timeLeft from deps) ============
+  // ============ TIMER ============
   useEffect(() => {
     if (loading || isTimeExpired || submitting || timeLeft === null) return;
 
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev === null) return null;
-        
         if (prev <= 0) {
           clearInterval(timer);
           return 0;
@@ -194,18 +308,16 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [loading, isTimeExpired, submitting]); // ✅ timeLeft removed to prevent infinite loops
+  }, [loading, isTimeExpired, submitting]);
 
-  // ============ 🟢 FIX 2: WATCHER (Added missing deps) ============
+  // ============ WATCHER ============
   useEffect(() => {
-    // Check expiry
     if (timeLeft !== null && timeLeft <= 0 && !isTimeExpired && !loading && !submittingRef.current) {
       console.warn('⏱️ Timer finished! Triggering auto-submit...');
       setIsTimeExpired(true);
       handleAutoSubmit();
     }
     
-    // Check warnings
     if (timeLeft !== null && timeLeft > 0) {
        if (timeLeft <= 300 && timeLeft > 60 && !hasShownFiveMinWarning) {
           setHasShownFiveMinWarning(true);
@@ -216,26 +328,18 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
           toast.error('🚨 1 Minute Remaining! Submit now!');
        }
     }
-  }, [
-    timeLeft, 
-    isTimeExpired, 
-    loading, 
-    hasShownFiveMinWarning, 
-    hasShownOneMinWarning
-  ]); // ✅ Deps are exhaustive
+  }, [timeLeft, isTimeExpired, loading, hasShownFiveMinWarning, hasShownOneMinWarning]);
 
-  // ============ AUTO-SAVE ANSWERS ============
+  // ============ AUTO-SAVE ============
   useEffect(() => {
     if (!testSession || submitting || Object.keys(answers).length === 0) return;
-
     const saveInterval = setInterval(() => {
       saveDraftAnswers(testSession.id, answers);
     }, 5000);
-
     return () => clearInterval(saveInterval);
   }, [testSession, answers, submitting]);
 
-  // ============ EVENT HANDLERS ============
+  // ============ HANDLERS ============
   const handleAnswerChange = (questionId: string, answer: string) => {
     setAnswers((prev) => ({ ...prev, [questionId]: answer }));
   };
@@ -271,14 +375,22 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
     await submitTest(false);
   };
 
-  // ============ SUBMIT LOGIC ============
+  // ============ SUBMIT LOGIC (FIXED) ============
   const submitTest = async (isAutoSubmit: boolean) => {
     if (!testSession) return;
     if (submittingRef.current) return;
     
+    // 🛑 CRITICAL FIX: Update Ref IMMEDIATELY to prevent race condition
+    // This tells the fullscreen listener "We are submitting, ignore the exit!"
+    submittingRef.current = true;
+    
     setSubmitting(true);
 
     try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen().catch(() => {}); 
+      }
+
       const currentAnswers = answersRef.current;
       const currentQuestions = questionsRef.current;
 
@@ -288,7 +400,6 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
       const totalMarks = currentQuestions.reduce((sum, q) => sum + q.marks, 0);
       const percentageScore = totalMarks > 0 ? Math.round((mcqScore / totalMarks) * 100) : 0;
 
-      // Check for EXISTING submission
       const { data: existingSubmission } = await supabase
         .from('submissions')
         .select('id')
@@ -305,7 +416,7 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
         theory_score: null,
         total_score: percentageScore,
         is_auto_submitted: isAutoSubmit,
-        submitted_at: new Date().toISOString(), // Marks as COMPLETED
+        submitted_at: new Date().toISOString(),
       };
 
       let submissionId;
@@ -332,9 +443,10 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
       await lockTestSession(testSession.id, submissionId);
       await deleteDraftAnswers(testSession.id);
 
+      // Cleanup
+      localStorage.removeItem(`violations_${testSession.id}`);
+
       console.log('✅ Test submitted successfully');
-      
-      // 🟢 FIX 3: Update success state so we don't show "Time Expired" anymore
       setSubmissionSuccess(true); 
 
       toast.success(
@@ -346,7 +458,6 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
         }
       );
 
-      // Force redirect fallback
       if(isAutoSubmit) {
          setTimeout(() => navigate(`/results-summary/${submissionId}`), 2500);
       }
@@ -362,6 +473,8 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
       } else {
         setError('Error submitting: ' + error.message);
         setSubmitting(false);
+        // Reset ref if error occurred
+        submittingRef.current = false;
         setShowConfirmModal(false);
       }
     }
@@ -384,7 +497,81 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
     );
   }
 
-  // 🟢 FIX 3: Only show "Time Expired" if we haven't successfully submitted yet
+  // 1. START SCREEN
+  if (!hasStarted && !submissionSuccess && !isTimeExpired) {
+    return (
+      <div className="fixed inset-0 z-50 bg-slate-900/95 flex flex-col items-center justify-center p-4 backdrop-blur-sm">
+        <div className="bg-white rounded-xl shadow-2xl p-8 max-w-lg w-full text-center space-y-6">
+          <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto">
+            <Maximize className="w-8 h-8 text-blue-600" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Proctored Assessment</h1>
+            <p className="text-slate-600 mt-2">
+              This assessment requires a secure environment. The test will run in full-screen mode.
+            </p>
+          </div>
+          <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-left text-sm text-blue-900">
+            <p className="font-semibold mb-2">Examination Rules:</p>
+            <ul className="list-disc list-inside space-y-1 text-slate-700">
+              <li>Full-screen mode must be active at all times.</li>
+              <li>Switching tabs or windows is recorded as a violation.</li>
+              <li>Exceeding {MAX_VIOLATIONS} violations will auto-submit the test.</li>
+            </ul>
+          </div>
+          <button 
+            onClick={triggerFullScreen}
+            className="w-full py-3 px-6 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-all shadow-md flex items-center justify-center gap-2"
+          >
+            <Lock className="w-4 h-4" />
+            Agree & Start Test
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. VIOLATION SCREEN
+  // 🛑 FIX: Added !submitting check. If we are submitting, DO NOT show this violation screen.
+  if (hasStarted && !isFullScreen && !submissionSuccess && !isTimeExpired && !submitting) {
+    return (
+      <div className="fixed inset-0 z-50 bg-slate-900/95 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full text-center space-y-5 border-t-8 border-red-500">
+          <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-7 h-7 text-red-600" />
+          </div>
+          
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">Action Required</h2>
+            <p className="text-slate-600 mt-2">
+              You have exited full-screen mode. Please return to the assessment immediately.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-center gap-3 py-3 bg-red-50 rounded-lg border border-red-100">
+            <div className="text-right">
+              <span className="block text-xs font-semibold text-red-600 uppercase tracking-wider">Violations</span>
+              <span className="block text-2xl font-bold text-red-700 leading-none">{violationCount}</span>
+            </div>
+            <div className="h-8 w-px bg-red-200"></div>
+            <div className="text-left">
+              <span className="block text-xs font-semibold text-red-600 uppercase tracking-wider">Remaining</span>
+              <span className="block text-2xl font-bold text-red-700 leading-none">{Math.max(0, MAX_VIOLATIONS - violationCount)}</span>
+            </div>
+          </div>
+
+          <button 
+            onClick={triggerFullScreen}
+            className="w-full py-3 px-6 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors shadow-lg"
+          >
+            Return to Full Screen
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. TIME EXPIRED
   if (isTimeExpired && !submissionSuccess) {
     return (
       <div className="flex justify-center items-center h-screen bg-gray-50">
@@ -401,7 +588,7 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
             onClick={() => handleAutoSubmit()} 
             className="text-sm text-gray-400 hover:text-gray-600 underline"
           >
-            Stuck? Click here to retry submission
+            Auto Submitted..! Click here to view result
           </button>
         </div>
       </div>
@@ -412,7 +599,7 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
 
   // ============ MAIN RENDER ============
   return (
-    <div className="flex bg-gray-50 min-h-screen">
+    <div className="flex bg-gray-100 min-h-screen">
       <div className="flex-1 flex flex-col">
         {/* Header */}
         <div className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
