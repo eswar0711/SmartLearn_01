@@ -494,7 +494,7 @@ export default function EduvergeHomePage() {
                         </div>
                     </a>
 
-                    <a href="/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:text-white transition-colors group">
+                    <a href="https://docs.google.com/gview?url=https://raw.githubusercontent.com/eswar0711/documents/main/EduVerge%20-%20Smart%20Learning%20%26%20Assessment%20Platform.pdf&embedded=true" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:text-white transition-colors group">
                         <span className="group-hover:underline">docs.eduverge.com</span>
                         <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-indigo-400">
                             <FileText size={18} />
