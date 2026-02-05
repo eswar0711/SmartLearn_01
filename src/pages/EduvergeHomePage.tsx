@@ -99,13 +99,38 @@ export default function EduvergeHomePage() {
 
   // Tech Stack from Feasibility Study
   const techStack = [
-    { name: "React 18", color: "bg-blue-100 text-blue-700 border-blue-200" },
-    { name: "TypeScript", color: "bg-blue-50 text-blue-600 border-blue-200" },
-    { name: "Supabase", color: "bg-green-100 text-green-700 border-green-200" },
-    { name: "Tailwind CSS", color: "bg-cyan-100 text-cyan-700 border-cyan-200" },
-    { name: "PostgreSQL", color: "bg-indigo-100 text-indigo-700 border-indigo-200" },
-    { name: "Vite", color: "bg-purple-100 text-purple-700 border-purple-200" },
-  ];
+  {
+    name: "React 18",
+    color: "bg-blue-100 text-blue-700 border-blue-200",
+    url: "https://react.dev",
+  },
+  {
+    name: "TypeScript",
+    color: "bg-blue-50 text-blue-600 border-blue-200",
+    url: "https://www.typescriptlang.org/docs/",
+  },
+  {
+    name: "Supabase",
+    color: "bg-green-100 text-green-700 border-green-200",
+    url: "https://supabase.com/docs",
+  },
+  {
+    name: "Tailwind CSS",
+    color: "bg-cyan-100 text-cyan-700 border-cyan-200",
+    url: "https://tailwindcss.com/docs",
+  },
+  {
+    name: "PostgreSQL",
+    color: "bg-indigo-100 text-indigo-700 border-indigo-200",
+    url: "https://www.postgresql.org/docs/",
+  },
+  {
+    name: "Vite",
+    color: "bg-purple-100 text-purple-700 border-purple-200",
+    url: "https://vitejs.dev/guide/",
+  },
+];
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 overflow-hidden font-sans text-slate-800 selection:bg-indigo-200">
@@ -416,9 +441,17 @@ export default function EduvergeHomePage() {
         <h2 className="text-2xl font-bold text-slate-400 uppercase tracking-widest mb-10">Built With Modern Tech</h2>
         <div className="flex flex-wrap justify-center gap-4">
             {techStack.map((tech, i) => (
-                <span key={i} className={`px-6 py-2 rounded-full font-semibold border ${tech.color} shadow-sm`}>
-                    {tech.name}
-                </span>
+               <a
+  key={i}
+  href={tech.url}
+  target="_blank"
+  rel="noopener noreferrer"
+  className={`px-6 py-2 rounded-full font-semibold border ${tech.color} shadow-sm
+    cursor-pointer hover:scale-105 transition-transform`}
+>
+  {tech.name}
+</a>
+
             ))}
         </div>
       </section>
