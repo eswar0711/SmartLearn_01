@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../utils/supabaseClient';
 import type { User } from '../utils/supabaseClient';
 //import NavigationSidebar from './NavigationSidebar';
-import { CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
+import { CheckCircle, AlertCircle, ArrowLeft, Clock } from 'lucide-react';
 
 interface TestResultsProps {
   user: User;
@@ -215,10 +215,16 @@ const TestResults: React.FC<TestResultsProps> = () => {
               <div className="px-4 py-2 bg-white rounded-lg border border-gray-300">
                 <p className="text-xs text-gray-600">Submission Type</p>
                 <p className="text-xl font-bold">
-                  {submission.is_auto_submitted ? (
-                    <span className="text-orange-600">⏱️ Auto-Submitted</span>
+                 {submission.is_auto_submitted ? (
+                    <span className="flex items-center gap-1 text-orange-600 text-xs font-semibold">
+                      <Clock className="w-4 h-4" />
+                      Auto Submitted
+                    </span>
                   ) : (
-                    <span className="text-green-600">✅ Manual Submit</span>
+                    <span className="flex items-center gap-1 text-green-600 text-xs font-semibold">
+                      <CheckCircle className="w-4 h-4" />
+                      Manual Submit
+                    </span>
                   )}
                 </p>
               </div>

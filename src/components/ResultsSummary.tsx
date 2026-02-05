@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../utils/supabaseClient';
 //import type { User } from '../utils/supabaseClient';
 //import NavigationSidebar from './NavigationSidebar';
-import { CheckCircle, XCircle, AlertCircle, Home } from 'lucide-react';
+import { CheckCircle, XCircle, AlertCircle, Home, Clock } from 'lucide-react';
 
 interface ResultsSummaryProps {
   user: any;
@@ -157,7 +157,7 @@ const ResultsSummary: React.FC<ResultsSummaryProps> = ( ) => {
                 isPassed ? 'text-green-600' : 'text-red-600'
               }`}
             >
-              {isPassed ? 'PASSED ✓' : 'FAILED ✗'}
+              {isPassed ? 'PASSED' : 'FAILED'}
             </h1>
 
             {/* Assessment Details */}
@@ -207,7 +207,18 @@ const ResultsSummary: React.FC<ResultsSummaryProps> = ( ) => {
               <div className="flex justify-between items-center pt-3 border-t border-gray-200">
                 <span className="text-gray-600">Submission Type</span>
                 <span className="font-semibold text-gray-800">
-                  {submission.is_auto_submitted ? '⏱️ Auto-Submitted' : '✅ Manual Submit'}
+                  {submission.is_auto_submitted ? (
+  <span className="flex items-center gap-1 text-orange-600 text-xs font-semibold">
+    <Clock className="w-4 h-4" />
+    Auto Submitted
+  </span>
+) : (
+  <span className="flex items-center gap-1 text-green-600 text-xs font-semibold">
+    <CheckCircle className="w-4 h-4" />
+    Manual Submit
+  </span>
+)}
+
                 </span>
               </div>
             </div>

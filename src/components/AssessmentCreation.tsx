@@ -112,7 +112,7 @@ const AssessmentCreation: React.FC<AssessmentCreationProps> = ({ user }) => {
   const handleBulkQuestionsAdded = (newQuestions: QuestionForm[]) => {
     setQuestions([...questions, ...newQuestions]);
     setShowBulkModal(false);
-    toast.success(`✅ ${newQuestions.length} questions added successfully!`, {
+    toast.success(`${newQuestions.length} questions added successfully!`, {
       position: 'top-right',
       autoClose: 4000,
     });

@@ -596,7 +596,8 @@ const addNewUser = async () => {
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
+              <div className="hidden md:block overflow-x-auto">
+
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
@@ -656,6 +657,48 @@ const addNewUser = async () => {
                   </tbody>
                 </table>
               </div>
+
+              {/* Mobile Card View */}
+<div className="md:hidden flex flex-col divide-y divide-gray-100">
+  {currentUsers.map((u) => (
+    <div key={u.id} className="p-4 space-y-3">
+
+      <div className="flex justify-between items-start">
+        <div>
+          <p className="font-semibold text-gray-900">{u.full_name}</p>
+          <p className="text-xs text-gray-500 break-all">{u.email}</p>
+        </div>
+
+        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 capitalize">
+          {u.role}
+        </span>
+      </div>
+
+      <div className="text-sm text-gray-600">
+        Branch: {getBranchName(u.branch_id)}
+      </div>
+
+      <div className="flex gap-2 text-xs">
+        {u.is_blocked ? (
+          <span className="px-2 py-1 bg-red-100 text-red-600 rounded-full">Blocked</span>
+        ) : u.is_active ? (
+          <span className="px-2 py-1 bg-green-100 text-green-600 rounded-full">Active</span>
+        ) : (
+          <span className="px-2 py-1 bg-yellow-100 text-yellow-600 rounded-full">Inactive</span>
+        )}
+      </div>
+
+      <button
+        onClick={() => setSelectedUser(u)}
+        className="w-full mt-2 py-2 bg-blue-50 text-blue-700 rounded-lg font-medium"
+      >
+        Manage User
+      </button>
+
+    </div>
+  ))}
+</div>
+
 
               {/* Pagination Controls */}
               <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">

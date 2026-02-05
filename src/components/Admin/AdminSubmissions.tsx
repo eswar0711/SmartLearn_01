@@ -316,7 +316,7 @@ const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({ user }) => {
           <p className="text-gray-600 text-sm md:text-base">
             {adminBranchId 
               ? 'Viewing submissions for your assigned branch'
-              : 'Viewing all submissions (Super Admin)'}
+              : 'Viewing all submissions'}
           </p>
         </div>
 
@@ -429,9 +429,19 @@ const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({ user }) => {
                         <td className="px-6 py-4 text-sm font-medium">
                           <div>
                             <p className="text-gray-800">{submission.student_name}</p>
-                            <p className="text-gray-500 text-xs">{submission.student_email}</p>
+
+                            <div className="flex items-center gap-2">
+                              <p className="text-gray-500 text-xs">{submission.student_email}</p>
+
+                              {submission.is_auto_submitted && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-bold">
+                                  Auto Submitted
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </td>
+                            
                         <td className="px-6 py-4 text-sm text-gray-600">{submission.assessment_title}</td>
                         <td className="px-6 py-4 text-sm">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
@@ -503,7 +513,14 @@ const AdminSubmissions: React.FC<AdminSubmissionsProps> = ({ user }) => {
                       <div className="flex items-center gap-2 text-xs text-gray-500 ml-6">
                         <Calendar className="w-3.5 h-3.5" />
                         <span>Submitted: {new Date(submission.submitted_at).toLocaleDateString()}</span>
+                        {submission.is_auto_submitted && (
+  <span className="mt-1 inline-block text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-bold">
+    Auto Submitted
+  </span>
+)}
+
                       </div>
+                      
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">

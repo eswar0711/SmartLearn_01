@@ -450,7 +450,7 @@ const TestTaking: React.FC<TestTakingProps> = ({ user }) => {
       setSubmissionSuccess(true); 
 
       toast.success(
-        isAutoSubmit ? '✅ Time expired. Test submitted.' : '✅ Test submitted successfully!',
+        isAutoSubmit ? 'Auto Submitted Test.' : ' Test submitted successfully!',
         {
           position: 'top-right',
           autoClose: 2000,
